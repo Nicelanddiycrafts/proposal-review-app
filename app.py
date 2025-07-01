@@ -1,12 +1,11 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 
-openai.api_key = st.secrets["OPENAI"]["OPENAI_API_KEY"]
+client = OpenAI(api_key=st.secrets["OPENAI"]["OPENAI_API_KEY"])
 
 def generate_proposal(prompt="Generate a short contract proposal for a service bid."):
     try:
-        client = openai.ChatCompletion()
-        response = client.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "user", "content": prompt}
@@ -19,14 +18,9 @@ def generate_proposal(prompt="Generate a short contract proposal for a service b
 
 def explain_section(text):
     try:
-        client = openai.ChatCompletion()
-        response = client.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a contract risk analyst."},
-                {"role": "user", "content": f"Explain this contract clause for risk: {text}"}
-            ],
-            temperature=0.5,
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": text}]
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -35,8 +29,15 @@ def explain_section(text):
 st.set_page_config(page_title="Proposal Draft Review Loop", layout="wide")
 st.title("🧾 Proposal Draft Review Loop (HITL Demo)")
 
-# --- Simulated RFP / Bid Prompt ---
 st.subheader("📄 Simulated RFP or Bid Prompt")
+
+cols = st.columns([8, 2])  # two columns with different widths
+with cols[0]:
+    st.write("")  # empty to align with subtitle
+
+with cols[1]:
+    st.markdown("[📄 View Sample Document](https://docs.google.com/document/d/1YDpjFDkG7LU-2nt6yfOI1TNqWpaTlRJc9zgDiM-Nsas/edit?usp=sharing)", unsafe_allow_html=True)
+
 bid_prompt = st.text_area(
     "Enter a fake request or bid prompt for the AI to respond to:",
     "We are seeking a vendor to provide cybersecurity training for our staff in Q3 2025..."
@@ -45,11 +46,9 @@ bid_prompt = st.text_area(
 if "draft" not in st.session_state:
     st.session_state.draft = ""
 
-# --- Generate Proposal Button ---
 if st.button("✨ Generate Proposal with GPT-4o"):
     st.session_state.draft = generate_proposal(prompt=bid_prompt)
 
-# --- Editable Draft Viewer ---
 if st.session_state.draft:
     edited_text = st.text_area("🔍 Review and Edit Proposal Draft:", value=st.session_state.draft, height=300)
 
