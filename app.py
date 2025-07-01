@@ -35,7 +35,7 @@ def create_pdf(text):
     width, height = LETTER
 
     lines = text.split('\n')
-    y = height - 40  # start near top of page
+    y = height - 40 
 
     for line in lines:
         c.drawString(40, y, line)
@@ -71,7 +71,8 @@ if "draft" not in st.session_state:
     st.session_state.draft = ""
 
 if st.button("✨ Generate Proposal with GPT-4o"):
-    st.session_state.draft = generate_proposal(prompt=bid_prompt)
+    with st.spinner("Generating proposal..."):
+        st.session_state.draft = generate_proposal(prompt=bid_prompt)
 
 if st.session_state.draft:
     edited_text = st.text_area("🔍 Review and Edit Proposal Draft:", value=st.session_state.draft, height=300)
