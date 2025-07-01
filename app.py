@@ -29,14 +29,56 @@ def explain_section(text):
 st.set_page_config(page_title="Proposal Draft Review Loop", layout="wide")
 st.title("🧾 Proposal Draft Review Loop (HITL Demo)")
 
-st.subheader("📄 Simulated RFP or Bid Prompt")
+import streamlit as st
 
-cols = st.columns([8, 2])  # two columns with different widths
-with cols[0]:
-    st.write("")  # empty to align with subtitle
+st.markdown("""
+<style>
+.tooltip {
+  position: relative;
+  display: inline-block;
+  font-weight: bold;
+  font-size: 1.3em;
+  color: #0366d6;
+  cursor: pointer;
+}
+.tooltip .tooltiptext {
+  visibility: hidden;
+  width: 180px;
+  background-color: #555;
+  color: #fff;
+  text-align: center;
+  border-radius: 6px;
+  padding: 6px 10px;
+  position: absolute;
+  z-index: 1;
+  bottom: 125%;
+  left: 50%;
+  margin-left: -90px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  font-size: 1.1em;
+}
+.tooltip:hover .tooltiptext {
+  visibility: visible;
+  opacity: 1;
+}
+.tooltip .tooltiptext a {
+  color: #aaddff;
+  text-decoration: none;
+  font-size: 1.2em;
+}
+.tooltip .tooltiptext a:hover {
+  text-decoration: underline;
+}
+</style>
 
-with cols[1]:
-    st.markdown("[📄 View Sample Document](https://docs.google.com/document/d/1YDpjFDkG7LU-2nt6yfOI1TNqWpaTlRJc9zgDiM-Nsas/edit?usp=sharing)", unsafe_allow_html=True)
+<div class="tooltip">📄 Simulated RFP or Bid Prompt
+  <span class="tooltiptext">
+    <a href="https://docs.google.com/document/d/1YDpjFDkG7LU-2nt6yfOI1TNqWpaTlRJc9zgDiM-Nsas/edit?usp=sharing" target="_blank" title="Open Document">🔗</a> Click link to view document
+  </span>
+</div>
+""", unsafe_allow_html=True)
+
 
 bid_prompt = st.text_area(
     "Enter a fake request or bid prompt for the AI to respond to:",
