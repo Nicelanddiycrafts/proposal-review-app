@@ -3,6 +3,12 @@ from openai import OpenAI
 from io import BytesIO
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
+from reportlab.lib.units import inch
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib import fonts
+from reportlab.lib.styles import ParagraphStyle
+from io import BytesIO
 
 client = OpenAI(api_key=st.secrets["OPENAI"]["OPENAI_API_KEY"])
 
@@ -31,20 +37,30 @@ def explain_section(text):
 
 def create_pdf(text):
     buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=LETTER)
-    width, height = LETTER
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=LETTER,
+        leftMargin=1 * inch,
+        rightMargin=1 * inch,
+        topMargin=1 * inch,
+        bottomMargin=1 * inch,
+        title="Final Proposal",
+    )
 
-    lines = text.split('\n')
-    y = height - 40 
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="Body", fontSize=12, leading=18))
+    story = []
 
-    for line in lines:
-        c.drawString(40, y, line)
-        y -= 15
-        if y < 40: 
-            c.showPage()
-            y = height - 40
+    story.append(Paragraph("<b>Finalized Proposal</b>", styles["Title"]))
+    story.append(Spacer(1, 0.3 * inch))
 
-    c.save()
+
+    for paragraph in text.split('\n'):
+        if paragraph.strip():
+            story.append(Paragraph(paragraph.strip(), styles["Body"]))
+            story.append(Spacer(1, 0.2 * inch))
+
+    doc.build(story)
     buffer.seek(0)
     return buffer
 
