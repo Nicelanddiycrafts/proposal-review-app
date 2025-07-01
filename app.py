@@ -1,5 +1,7 @@
 import streamlit as st
 from openai import OpenAI
+from io import BytesIO
+from docx import Document
 
 client = OpenAI(api_key=st.secrets["OPENAI"]["OPENAI_API_KEY"])
 
@@ -26,8 +28,19 @@ def explain_section(text):
     except Exception as e:
         return f"Error: {e}"
 
+def create_word_doc(text):
+    doc = Document()
+    doc.add_heading("Finalized Proposal", 0)
+    for line in text.split('\n'):
+        doc.add_paragraph(line)
+    f = BytesIO()
+    doc.save(f)
+    f.seek(0)
+    return f
+
 st.set_page_config(page_title="Proposal Draft Review Loop", layout="wide")
 st.title("🧾 Proposal Draft Review Loop (HITL Demo)")
+
 st.markdown("""
 <style>
 a.no-underline {
@@ -73,5 +86,42 @@ if st.session_state.draft:
             else:
                 st.warning("Please enter a section to flag.")
 
+    st.subheader("📝 Highlight & Comment Section")
+
+    highlighted_text = st.text_area(
+        "Paste or type the exact text you want to highlight from the proposal:",
+        height=100,
+    )
+
+    comment = st.text_area(
+        "Write your comment or feedback about the highlighted section:",
+        height=100,
+    )
+
     if st.button("✅ Submit Review & Feedback"):
-        st.success("Review submitted. (Simulated feedback loop)")
+        if highlighted_text.strip() and comment.strip():
+            st.success("Feedback submitted. Thank you! (Simulated feedback loop)")
+        else:
+            st.warning("Please provide both highlighted text and comment.")
+
+    st.subheader("Add Missing Data or Corrections")
+    corrections = st.text_area("Enter corrections or missing data to add:", height=150)
+
+    if st.button("➕ Add Corrections"):
+        if corrections.strip():
+            st.session_state.draft += "\n\n" + corrections.strip()
+            st.success("Corrections added to the proposal draft.")
+        else:
+            st.warning("Please enter corrections before adding.")
+
+    if st.button("✅ Finalize Proposal"):
+        if st.session_state.draft.strip():
+            docx_file = create_word_doc(st.session_state.draft)
+            st.download_button(
+                label="Download Final Proposal (.docx)",
+                data=docx_file,
+                file_name="final_proposal.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        else:
+            st.warning("Proposal draft is empty.")
