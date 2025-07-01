@@ -1,7 +1,8 @@
 import streamlit as st
 from openai import OpenAI
 from io import BytesIO
-from docx import Document
+from reportlab.lib.pagesizes import LETTER
+from reportlab.pdfgen import canvas
 
 client = OpenAI(api_key=st.secrets["OPENAI"]["OPENAI_API_KEY"])
 
@@ -28,15 +29,24 @@ def explain_section(text):
     except Exception as e:
         return f"Error: {e}"
 
-def create_word_doc(text):
-    doc = Document()
-    doc.add_heading("Finalized Proposal", 0)
-    for line in text.split('\n'):
-        doc.add_paragraph(line)
-    f = BytesIO()
-    doc.save(f)
-    f.seek(0)
-    return f
+def create_pdf(text):
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=LETTER)
+    width, height = LETTER
+
+    lines = text.split('\n')
+    y = height - 40  # start near top of page
+
+    for line in lines:
+        c.drawString(40, y, line)
+        y -= 15
+        if y < 40: 
+            c.showPage()
+            y = height - 40
+
+    c.save()
+    buffer.seek(0)
+    return buffer
 
 st.set_page_config(page_title="Proposal Draft Review Loop", layout="wide")
 st.title("🧾 Proposal Draft Review Loop (HITL Demo)")
@@ -114,14 +124,14 @@ if st.session_state.draft:
         else:
             st.warning("Please enter corrections before adding.")
 
-    if st.button("✅ Finalize Proposal"):
+    if st.button("✅ Finalize Proposal as PDF"):
         if st.session_state.draft.strip():
-            docx_file = create_word_doc(st.session_state.draft)
+            pdf_file = create_pdf(st.session_state.draft)
             st.download_button(
-                label="Download Final Proposal (.docx)",
-                data=docx_file,
-                file_name="final_proposal.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                label="Download Final Proposal (.pdf)",
+                data=pdf_file,
+                file_name="final_proposal.pdf",
+                mime="application/pdf",
             )
         else:
             st.warning("Proposal draft is empty.")
