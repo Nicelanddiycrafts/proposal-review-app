@@ -28,10 +28,16 @@ def explain_section(text):
 
 st.set_page_config(page_title="Proposal Draft Review Loop", layout="wide")
 st.title("🧾 Proposal Draft Review Loop (HITL Demo)")
-st.markdown(
-    'Simulated RFP or Bid Prompt '
-    '[🔗](https://example.com/your-document.pdf)'
-)
+st.markdown("""
+<style>
+a.no-underline {
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+}
+</style>
+Simulated RFP or Bid Prompt <a href="https://docs.google.com/document/d/1YDpjFDkG7LU-2nt6yfOI1TNqWpaTlRJc9zgDiM-Nsas/edit?usp=sharing" class="no-underline" target="_blank">🔗</a>
+""", unsafe_allow_html=True)
 
 bid_prompt = st.text_area(
     "Enter a fake request or bid prompt for the AI to respond to:",
