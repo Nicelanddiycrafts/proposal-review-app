@@ -2,43 +2,50 @@ import streamlit as st
 from openai import OpenAI
 from io import BytesIO
 from reportlab.lib.pagesizes import LETTER
-from reportlab.pdfgen import canvas
 from reportlab.lib.units import inch
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 import matplotlib.pyplot as plt
 import numpy as np
+import re
+from st_click_detector import click_detector
+
+if "highlight_color" not in st.session_state:
+    st.session_state.highlight_color = "#d1f6f4"  # default color
+
+for key in ["draft", "highlights", "edit_log"]:
+    if key not in st.session_state:
+        st.session_state[key] = [] if "log" in key or "highlights" in key else ""
 
 client = OpenAI(api_key=st.secrets["OPENAI"]["OPENAI_API_KEY"])
 
-# === Proposal Generation with Optional Prompt Add-ons ===
 def generate_proposal(base_prompt, add_honesty=False, add_sources=False, add_confidence=False):
     suffixes = []
     if add_honesty:
-        suffixes.append(
-            "Please be honest. If no reliable source is available, say that instead of making anything up."
-        )
+        suffixes.append("Please be honest. If no reliable source is available, say that instead of making anything up.")
     if add_sources:
-        suffixes.append(
-            "Please include the links to the sources you used."
-        )
+        suffixes.append("Please include the links to the sources you used.")
     if add_confidence:
-        suffixes.append(
-            "Please provide a score between 1 and 10 to explain how confident you are in your answer."
-        )
+        suffixes.append("Please provide a score between 1 and 10 to explain how confident you are in your answer.")
     final_prompt = base_prompt + "\n\n" + "\n".join(suffixes) if suffixes else base_prompt
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=[{"role": "user", "content": final_prompt}],
+            messages=[
+                {"role": "system", "content": (
+                    "You are a professional federal proposal writer tasked with drafting compelling, complete, "
+                    "and compliant responses to RFPs from government agencies and institutions. "
+                    "Your writing should be clear, factual, concise, and persuasive."
+                )},
+                {"role": "user", "content": final_prompt}
+            ],
             temperature=0.7,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         return f"Error: {e}"
 
-# === Explain / Cite / Summarize Section ===
 def explain_section(text, mode="explain"):
     mode_prompts = {
         "explain": "Please explain the following section in simpler terms:",
@@ -56,7 +63,6 @@ def explain_section(text, mode="explain"):
     except Exception as e:
         return f"Error: {e}"
 
-# === PDF Creation ===
 def create_pdf(text):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -68,15 +74,12 @@ def create_pdf(text):
         bottomMargin=1 * inch,
         title="Final Proposal",
     )
-
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="Body", fontSize=12, leading=18))
-    story = []
+    story = [Paragraph("<b>Finalized Proposal</b>", styles["Title"]), Spacer(1, 0.3 * inch)]
 
-    story.append(Paragraph("<b>Finalized Proposal</b>", styles["Title"]))
-    story.append(Spacer(1, 0.3 * inch))
-
-    for paragraph in text.split('\n'):
+    clean_text = re.sub(r'<.*?>', '', text)
+    for paragraph in clean_text.split('\n'):
         if paragraph.strip():
             story.append(Paragraph(paragraph.strip(), styles["Body"]))
             story.append(Spacer(1, 0.2 * inch))
@@ -85,32 +88,59 @@ def create_pdf(text):
     buffer.seek(0)
     return buffer
 
-# === Mock SAM.gov Bids for Data Ingestion ===
+# Sample Bids
 MOCK_BIDS = {
-    "Cybersecurity Training Q3 2025": "We are seeking a vendor to provide cybersecurity training for our staff in Q3 2025, including phishing simulation and incident response exercises.",
-    "Office Cleaning Services FY 2026": "The agency requires office cleaning services for the fiscal year 2026 across three federal buildings.",
-    "Cloud Migration Services": "Looking for qualified vendors to assist with cloud migration of legacy systems by the end of 2025.",
+    "Law Firm Website Redesign": "We are a mid-sized law firm seeking a qualified vendor to redesign our website to enhance client engagement and optimize mobile responsiveness. The new site must comply with WCAG 2.1 AA accessibility standards and integrate seamlessly with our existing WordPress CMS. Proposals should include project timelines, team qualifications, examples of similar work, and total cost estimates.",
+    "City of Riverside Office Supplies": "The City of Riverside invites qualified vendors to submit bids for the supply and delivery of office supplies for various municipal departments. Vendors must provide bulk pricing on items including paper, toner cartridges, pens, folders, and filing systems. Proposals should detail delivery lead times, eco-friendly certifications, and any volume discounts offered.",
+    "AI Legal Document Summarization Tool": "We are seeking a technology partner to develop an AI-powered application capable of summarizing lengthy legal documents such as contracts, NDAs, and terms of service into concise bullet-point summaries for internal compliance teams. The tool must support English and Spanish languages with a minimum of 90% summarization accuracy. Please include technical specifications, data training considerations, licensing fees, and maintenance plans.",
+    "Fintech Cybersecurity Audit": "Our fintech startup requires a thorough third-party cybersecurity audit to achieve SOC 2 Type II compliance. The audit must encompass penetration testing, AWS cloud infrastructure review, employee access controls, and policy evaluation. Submissions should include audit methodology, team certifications (e.g., CISSP), past client references, and detailed pricing.",
+    "HVAC Systems Replacement for Schools": "We are requesting bids for the removal and replacement of HVAC systems across three elementary schools in the district. Scope includes equipment removal, installation of energy-efficient systems, ductwork modifications, and post-install testing. Bidders must be licensed contractors with public school experience.",
     "Custom Bid (Type your own...)": ""
 }
 
 st.set_page_config(page_title="SalesPatriot AI Assistant", layout="wide")
-st.title("🧾 SalesPatriot Proposal Draft Review Loop (HITL Demo)")
+tab = st.sidebar.radio("Choose View", ["Proposal Generator", "Proposal Preview", "Metrics & Evaluation"])
 
-# === Sidebar for navigation ===
-tab = st.sidebar.radio("Choose View", ["Proposal Generator", "Metrics & Evaluation"])
+def render_highlighted_text(draft, highlights):
+    # Clean extra newlines and strip trailing spaces
+    clean_draft = re.sub(r'\n{3,}', '\n\n', draft).strip()
+    
+    # Sort highlights by length to avoid substring conflicts
+    highlights_sorted = sorted(highlights, key=lambda h: len(h['text']), reverse=True)
+
+    for h in highlights_sorted:
+        safe_text = re.escape(h['text'])
+        replacement = f'<span style="background-color: {h["color"]}; padding: 2px 4px; border-radius: 4px;">{h["text"]}</span>'
+        clean_draft = re.sub(safe_text, replacement, clean_draft, flags=re.IGNORECASE)
+
+    # Replace newlines with paragraph breaks
+    html_output = clean_draft.replace('\n\n', '</p><p>').replace('\n', '<br>')
+
+    return f"""
+    <div style="white-space: pre-wrap; line-height: 1.6; font-size: 16px;">
+        <p>{html_output}</p>
+    </div>
+    """
+
+
+# Session state init
+for key in ["draft", "highlights", "edit_log"]:
+    if key not in st.session_state:
+        st.session_state[key] = [] if "log" in key or "highlights" in key else ""
 
 if tab == "Proposal Generator":
-    st.markdown("#### Step 1: Select or Enter a Federal Opportunity / RFP")
+    st.title("🧾 SalesPatriot Proposal Draft Review Loop (HITL Demo)")
 
-    bid_choice = st.selectbox("Choose a sample SAM.gov bid:", list(MOCK_BIDS.keys()))
-    if bid_choice == "Custom Bid (Type your own...)":
-        bid_prompt = st.text_area("Enter your custom fake request or bid prompt:", height=150)
-    else:
-        bid_prompt = MOCK_BIDS[bid_choice]
-        st.text_area("Sample RFP / Bid Prompt:", bid_prompt, height=150, disabled=True)
+    st.markdown("#### Step 1: Select or Enter a Federal Opportunity / RFP")
+    bid_choice = st.selectbox("Choose a sample bid:", list(MOCK_BIDS.keys()))
+    bid_prompt = st.text_area(
+        "Enter your custom bid prompt:" if bid_choice == "Custom Bid (Type your own...)" else "Sample RFP / Bid Prompt:",
+        value=MOCK_BIDS[bid_choice],
+        height=150,
+        disabled=bid_choice != "Custom Bid (Type your own...)",
+    )
 
     st.markdown("#### Step 2: Select AI Generation Options (Hallucination Mitigation)")
-
     col1, col2, col3 = st.columns(3)
     add_honesty = col1.checkbox("Honesty Response", value=True)
     add_sources = col2.checkbox("Source Request")
@@ -121,149 +151,147 @@ if tab == "Proposal Generator":
             st.warning("Please enter or select a valid bid prompt.")
         else:
             with st.spinner("Generating proposal..."):
-                proposal = generate_proposal(
+                st.session_state.draft = generate_proposal(
                     bid_prompt,
                     add_honesty=add_honesty,
                     add_sources=add_sources,
                     add_confidence=add_confidence,
                 )
-                st.session_state.draft = proposal
+                st.session_state.highlights = []
+                st.session_state.edit_log = []
 
-    if "draft" in st.session_state and st.session_state.draft:
-        st.markdown("#### Step 3: Review & Edit Proposal Draft")
-        edited_text = st.text_area(
-            "🔍 Review and edit proposal draft:",
-            value=st.session_state.draft,
-            height=300,
-            key="proposal_edit_area"
-        )
+    st.markdown("#### Step 3: Review & Edit Proposal Draft")
+    st.session_state.draft = st.text_area(
+        "🔍 Review and edit proposal draft:",
+        value=st.session_state.draft,
+        height=400,
+        key="proposal_edit_area",
+    )
 
-        # Buttons to Explain / Cite / Summarize selected section
-        st.markdown("#### Step 4: Section Analysis & Source-grounding")
+    st.markdown("#### Step 4: Section Analysis & Source-grounding")
+    section_to_analyze = st.text_area("Paste a section you'd like to analyze:", height=100, key="section_input")
+    col_exp, col_cit, col_sum = st.columns(3)
+    with col_exp:
+        if st.button("💬 Explain Section") and section_to_analyze.strip():
+            st.info(explain_section(section_to_analyze, mode="explain"))
+    with col_cit:
+        if st.button("📚 Cite Section") and section_to_analyze.strip():
+            st.info(explain_section(section_to_analyze, mode="cite"))
+    with col_sum:
+        if st.button("📝 Summarize Section") and section_to_analyze.strip():
+            st.info(explain_section(section_to_analyze, mode="summarize"))
 
-        section_to_analyze = st.text_area("Paste a section you'd like to analyze:", height=100, key="section_input")
+    st.markdown("#### Step 5: Human-in-the-Loop Review")
+    colors = ["#d1f6f4", "#c5f2cd", "#f9caca", "#eadbf6", "#fff2c8"]
 
-        col_exp, col_cit, col_sum = st.columns(3)
-        with col_exp:
-            if st.button("💬 Explain Section"):
-                if section_to_analyze.strip():
-                    explanation = explain_section(section_to_analyze, mode="explain")
-                    st.info(explanation)
-                else:
-                    st.warning("Please enter a section to explain.")
-        with col_cit:
-            if st.button("📚 Cite Section"):
-                if section_to_analyze.strip():
-                    citations = explain_section(section_to_analyze, mode="cite")
-                    st.info(citations)
-                else:
-                    st.warning("Please enter a section to cite.")
-        with col_sum:
-            if st.button("📝 Summarize Section"):
-                if section_to_analyze.strip():
-                    summary = explain_section(section_to_analyze, mode="summarize")
-                    st.info(summary)
-                else:
-                    st.warning("Please enter a section to summarize.")
+    selected_color = st.session_state.highlight_color 
+    color_squares_html = "".join(
+        f"<a href='#' id='{c}' style='"
+        f"background-color: {c}; "
+        f"width: 40px; height: 40px; display: inline-block; "
+        f"border-radius: 8px; margin-right: 8px; cursor: pointer; "
+        f"border: 4px solid {'#333' if c == selected_color else '#ccc'}; "
+        f"box-sizing: border-box;"
+        f"'></a>"
+        for c in colors
+    )
 
-        # Human-in-the-loop review
-        st.markdown("#### Step 5: Human-in-the-Loop Review")
+    clicked = click_detector(
+    f"<div style='display:flex; align-items:center; gap:12px;'>{color_squares_html}</div>", 
+    key="color_picker_row"
+    )
 
-        highlighted_text = st.text_area(
-            "Paste or type exact text to highlight:",
-            height=100,
-            key="highlighted_text"
-        )
+    if clicked and clicked != st.session_state.highlight_color:
+        st.session_state.highlight_color = clicked
+        st.rerun()  # rerun here is okay since it's a click
+
+    custom_picker = st.color_picker("🎨 Or choose a custom color :", st.session_state.highlight_color, key="custom_color_picker")
+
+    if custom_picker != st.session_state.highlight_color:
+        st.session_state.highlight_color = custom_picker
+
+    st.write(f"Selected highlight color: {st.session_state.highlight_color}")
+
+    with st.form("review_form"):
+        highlighted_text = st.text_area("Paste or type exact text to highlight:", height=100, key="highlighted_text")
         comment = st.text_area(
             "Write your comment or feedback about the highlighted section:",
             height=100,
-            key="comment_text"
+            key="comment_text",
         )
-        if st.button("✅ Submit Review & Feedback"):
+        submit = st.form_submit_button("✅ Submit Review & Feedback")
+
+        if submit:
             if highlighted_text.strip() and comment.strip():
-                if "edit_log" not in st.session_state:
-                    st.session_state.edit_log = []
-                st.session_state.edit_log.append({
-                    "highlighted": highlighted_text,
-                    "comment": comment
-                })
-                st.success("Feedback submitted. Thank you! (Simulated feedback loop)")
-                # Clear input areas after submission
-                st.session_state.highlighted_text = ""
-                st.session_state.comment_text = ""
+                highlight_color = st.session_state.highlight_color
+                st.session_state.highlights.append({"text": highlighted_text.strip(), "color": highlight_color})
+                st.session_state.edit_log.append({"highlighted": highlighted_text.strip(), "comment": comment.strip()})
+                st.session_state.draft += f"\n\n[Reviewer Comment on highlighted text: {comment.strip()}]"
+                st.success("Feedback and highlight submitted. Thank you! (Simulated feedback loop)")
+                st.rerun()
             else:
                 st.warning("Please provide both highlighted text and comment.")
 
-        # Show edit history
-        if "edit_log" in st.session_state and st.session_state.edit_log:
-            st.markdown("##### 📜 Edit History")
-            for i, entry in enumerate(st.session_state.edit_log, 1):
-                st.markdown(f"**{i}.** _{entry['highlighted']}_ — 💬 {entry['comment']}")
+    if st.session_state.edit_log:
+        st.markdown("##### 📜 Edit History")
+        for i, entry in enumerate(st.session_state.edit_log, 1):
+            st.markdown(f"**{i}.** _{entry['highlighted']}_ — 💬 {entry['comment']}")
 
-        # Add corrections or missing data
-        st.markdown("#### Step 6: Add Missing Data or Corrections")
-        corrections = st.text_area("Enter corrections or missing data to add:", height=150, key="corrections_text")
-        if st.button("➕ Add Corrections"):
-            if corrections.strip():
-                # Append corrections to draft
-                st.session_state.draft += "\n\n" + corrections.strip()
-                st.success("Corrections added to the proposal draft.")
-                # Clear corrections text box
-                st.session_state.corrections_text = ""
-            else:
-                st.warning("Please enter corrections before adding.")
+    st.markdown("#### Step 6: Add Missing Data or Corrections")
+    corrections = st.text_area("Enter corrections or missing data to add:", height=150, key="corrections_text")
+    if st.button("➕ Add Corrections"):
+        if corrections.strip():
+            st.session_state.draft += "\n\n" + corrections.strip()
+            st.success("Corrections added to the proposal draft.")
+        else:
+            st.warning("Please enter corrections before adding.")
 
-        # Finalize and export PDF
-        if st.button("✅ Finalize Proposal as PDF"):
-            if st.session_state.draft.strip():
-                pdf_file = create_pdf(st.session_state.draft)
-                st.download_button(
-                    label="Download Final Proposal (.pdf)",
-                    data=pdf_file,
-                    file_name="final_proposal.pdf",
-                    mime="application/pdf",
-                )
-            else:
-                st.warning("Proposal draft is empty.")
+    st.markdown("#### Step 7: Remove Unwanted Text from Proposal")
+    remove_text = st.text_area("Enter exact text to remove from the proposal draft:", height=100, key="remove_text_area")
+    if st.button("❌ Remove Text"):
+        if remove_text.strip() in st.session_state.draft:
+            st.session_state.draft = st.session_state.draft.replace(remove_text.strip(), "")
+            st.success("Text removed from the proposal draft.")
+        else:
+            st.warning("The specified text was not found in the proposal draft.")
 
-    # Footer
+    if st.button("✅ Finalize Proposal as PDF"):
+        if st.session_state.draft.strip():
+            pdf_file = create_pdf(st.session_state.draft)
+            st.download_button(
+                "Download Final Proposal (.pdf)",
+                data=pdf_file,
+                file_name="final_proposal.pdf",
+                mime="application/pdf",
+            )
+        else:
+            st.warning("Proposal draft is empty.")
+
     st.markdown("---\n_Prototype by SalesPatriot AI Assistant – July 2025 Demo_")
+
+elif tab == "Proposal Preview":
+    st.title("✏️ Proposal Draft Preview with Highlights")
+
+    if st.session_state.draft.strip():
+        st.markdown(
+            render_highlighted_text(st.session_state.draft, st.session_state.highlights),
+            unsafe_allow_html=True
+        )
+    else:
+        st.info("No proposal draft to display. Generate one first.")
+
 
 elif tab == "Metrics & Evaluation":
-    st.title("📊 Model Evaluation Dashboard (Demo Data)")
+    st.title("📊 Model Evaluation Dashboard (Demo Images)")
 
-    st.markdown("### Hallucination Rates by Prompting Method")
-    methods = ["Original", "Honesty", "Source Request", "Confidence Score"]
-    rates = [3.2, 0.8, 0.4, 0.6]  # Placeholder values
+    st.markdown("### 🧠 Average Hallucination Rate per Method (ChatGPT 3.5 vs. Gemini 2.5)")
+    st.image("1.png", use_container_width=True)
 
-    x = np.arange(len(methods))
-    fig, ax = plt.subplots()
-    ax.bar(x, rates, color=["#AEC6CF", "#FFDAB9", "#B0E0E6", "#F4C2C2"])
-    ax.set_xticks(x)
-    ax.set_xticklabels(methods)
-    ax.set_ylabel("Hallucination Rate (%)")
-    ax.set_title("Hallucination Rate by Prompting Method")
-    st.pyplot(fig)
+    st.markdown("### 📋 Comparison of Evaluation Scores: Gemini vs. ChatGPT 3.5")
+    st.image("2.png", use_container_width=True)
 
-    st.markdown("### Average ChatGPT Evaluation Scores")
-    criteria = [
-        "Relevance",
-        "Completeness",
-        "Factual Accuracy",
-        "Terminology Use",
-        "Clarity & Conciseness",
-        "Contextual Understanding"
-    ]
-    avg_scores = [4.2, 4.5, 4.6, 4.3, 4.4, 4.1]  # Placeholder values
-
-    x = np.arange(len(criteria))
-    fig2, ax2 = plt.subplots()
-    ax2.bar(x, avg_scores, color=["#AEC6CF", "#FFDAB9", "#B0E0E6", "#F4C2C2", "#D8BFD8", "#E0FFFF"])
-    ax2.set_xticks(x)
-    ax2.set_xticklabels(criteria, rotation=30, ha="right")
-    ax2.set_ylim(0, 5)
-    ax2.set_ylabel("Average Score (1–5)")
-    ax2.set_title("Average ChatGPT Evaluation Scores (Gemini Responses)")
-    st.pyplot(fig2)
+    st.markdown("### ⏱️ Comparison of Average Latency and Token Cost: Gemini vs. ChatGPT 3.5")
+    st.image("3.png", use_container_width=True)
 
     st.markdown("---\n_Prototype by SalesPatriot AI Assistant – July 2025 Demo_")
+
